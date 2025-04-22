@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
@@ -9,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ApiKeySettings } from "@/components/ApiKeySettings";
 
 const DataManagement = () => {
   const [vectorPercentage, setVectorPercentage] = useState(75);
@@ -32,11 +32,8 @@ const DataManagement = () => {
   const handleUpload = () => {
     if (!selectedFile) return;
     
-    // Here we would normally handle the file upload to Pinecone
-    // For now, just show a message that we would upload
     alert(`Ready to upload ${selectedFile.name} to Pinecone vector database`);
     
-    // Reset the file selection
     setSelectedFile(null);
     const fileInput = document.getElementById("file-upload") as HTMLInputElement;
     if (fileInput) fileInput.value = "";
@@ -56,9 +53,10 @@ const DataManagement = () => {
         </header>
 
         <Tabs defaultValue="upload">
-          <TabsList className="grid w-full grid-cols-2 mb-6">
+          <TabsList className="grid w-full grid-cols-3 mb-6">
             <TabsTrigger value="upload">Upload Data</TabsTrigger>
             <TabsTrigger value="settings">Search Settings</TabsTrigger>
+            <TabsTrigger value="api-keys">API Keys</TabsTrigger>
           </TabsList>
 
           <TabsContent value="upload" className="space-y-6">
@@ -181,6 +179,20 @@ const DataManagement = () => {
               <CardFooter>
                 <Button className="w-full">Save Settings</Button>
               </CardFooter>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="api-keys">
+            <Card>
+              <CardHeader>
+                <CardTitle>API Key Management</CardTitle>
+                <CardDescription>
+                  Configure your API keys for Pinecone and OpenAI integration.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ApiKeySettings />
+              </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
