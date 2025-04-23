@@ -9,6 +9,7 @@ interface DocumentMetadata {
   source: string;
   timestamp: string;
   title?: string;
+  content?: string;
 }
 
 /**
@@ -31,11 +32,14 @@ export const uploadDocumentToPinecone = async (file: File, documentId?: string):
     const metadata: DocumentMetadata = {
       source: file.name,
       timestamp: new Date().toISOString(),
-      title: file.name
+      title: file.name,
+      content: fileContent.substring(0, 8000) // Limit content size to avoid metadata size issues
     };
     
     // Use file name as ID if not provided
     const id = documentId || file.name.replace(/\s+/g, '-').toLowerCase();
+    
+    console.log("Using Pinecone API key:", apiKey.substring(0, 10) + "...");
     
     // Upload to Pinecone
     const response = await fetch('https://api.pinecone.io/vectors/upsert', {
@@ -80,6 +84,8 @@ export const searchPinecone = async (query: string, topK = 3): Promise<string> =
     // Create embedding for the query
     const queryVector = await createEmbeddings(query, openaiApiKey);
     
+    console.log("Searching Pinecone with API key:", apiKey.substring(0, 10) + "...");
+    
     // Query Pinecone
     const response = await fetch('https://api.pinecone.io/query', {
       method: 'POST',
@@ -104,9 +110,9 @@ export const searchPinecone = async (query: string, topK = 3): Promise<string> =
     const data = await response.json();
     
     // Process and return results as a string
-    const results = data.matches.map((match: any) => {
+    const results = data.matches?.map((match: any) => {
       return `Source: ${match.metadata.source}\nRelevance: ${match.score}\n${match.metadata.content || 'No content available'}\n`;
-    }).join('\n---\n');
+    }).join('\n---\n') || "No relevant documents found.";
     
     return results;
   } catch (error) {
@@ -128,6 +134,8 @@ const readFileAsText = (file: File): Promise<string> => {
 // Helper function to create embeddings using OpenAI's API
 const createEmbeddings = async (text: string, apiKey: string): Promise<number[]> => {
   try {
+    console.log("Creating embeddings with OpenAI API key:", apiKey.substring(0, 10) + "...");
+    
     const response = await fetch('https://api.openai.com/v1/embeddings', {
       method: 'POST',
       headers: {

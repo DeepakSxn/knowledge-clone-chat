@@ -35,6 +35,8 @@ export const generateChatCompletion = async (
       ? messages 
       : [{ role: 'system', content: systemContent }, ...messages];
     
+    console.log("Using OpenAI API key:", apiKey.substring(0, 10) + "...");
+    
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
