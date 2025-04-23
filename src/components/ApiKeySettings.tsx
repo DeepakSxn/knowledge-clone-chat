@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { API_KEYS } from "@/services/api";
 
 interface ApiKeys {
   pinecone: string;
@@ -12,8 +13,8 @@ interface ApiKeys {
 
 export function ApiKeySettings() {
   const [apiKeys, setApiKeys] = useState<ApiKeys>({
-    pinecone: localStorage.getItem("pineconeApiKey") || "",
-    openai: localStorage.getItem("openaiApiKey") || "",
+    pinecone: localStorage.getItem("pineconeApiKey") || API_KEYS.pinecone,
+    openai: localStorage.getItem("openaiApiKey") || API_KEYS.openai,
   });
 
   const handleSaveKeys = () => {
@@ -51,7 +52,7 @@ export function ApiKeySettings() {
       </Button>
 
       <p className="text-sm text-gray-500 mt-4">
-        Note: This is a temporary development solution. For production, we recommend using Supabase to securely manage API keys.
+        Note: API keys are hardcoded for your convenience, but you can override them here.
       </p>
     </div>
   );

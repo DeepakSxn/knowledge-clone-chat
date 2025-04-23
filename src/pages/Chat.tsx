@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,9 @@ import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/UserAvatar";
 import { SummaryExpand } from "@/components/ui/summary-expand";
 import { cn } from "@/lib/utils";
+import { generateChatCompletion } from "@/services/openai";
+import { searchPinecone } from "@/services/pinecone";
+import { toast } from "sonner";
 
 interface Message {
   id: string;
@@ -27,10 +30,11 @@ const Chat = () => {
       timestamp: new Date(),
     },
   ]);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim()) return;
+    if (!prompt.trim() || loading) return;
 
     // Add user message
     const userMessage: Message = {
@@ -41,26 +45,88 @@ const Chat = () => {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    setLoading(true);
 
-    // Simulate AI response
-    setTimeout(() => {
-      const longResponse = "This is a simulated response. When connected to actual APIs, I'll respond based on your vector database and web search settings. The response length would be determined by your settings in the data management section. Responses longer than your specified threshold would be summarized and provide a 'Show More Details' option to see the full content. This feature helps keep the chat interface clean while still giving you access to detailed information when needed. Your vector database settings would determine how much the response relies on your uploaded knowledge versus web search results.";
+    try {
+      // Get settings from localStorage
+      const vectorPercentage = parseInt(localStorage.getItem("vectorPercentage") || "75");
+      const resultLength = parseInt(localStorage.getItem("resultLength") || "200");
+      const summarizeThreshold = parseInt(localStorage.getItem("summarizeThreshold") || "500");
       
-      // Example of a response that exceeds threshold (would be summarized)
-      const summary = "This is a simulated response. When connected to actual APIs, I'll respond based on your vector database and web search settings. The response length would be determined by your settings...";
+      // Calculate token estimates (rough approximation)
+      const maxTokens = resultLength * 1.5;
       
+      // Get context from Pinecone if vectorPercentage > 0
+      let vectorResults = "";
+      if (vectorPercentage > 0) {
+        try {
+          vectorResults = await searchPinecone(prompt);
+        } catch (error) {
+          console.error("Error searching Pinecone:", error);
+          toast.error("Failed to search knowledge database. Check your Pinecone API key.");
+        }
+      }
+
+      // Get web results if needed (mock for now)
+      // In a real implementation, you would call an actual web search API
+      const webResults = vectorPercentage < 100 ? "Simulated web search results would appear here." : "";
+      
+      // Prepare past messages for context (excluding system messages)
+      const pastMessages = messages
+        .filter(m => m.id !== "1") // Skip initial greeting
+        .slice(-5) // Only use last 5 messages for context
+        .map(m => ({
+          role: m.isUser ? 'user' as const : 'assistant' as const,
+          content: m.content
+        }));
+
+      // Generate response with context
+      const response = await generateChatCompletion(
+        [...pastMessages, { role: 'user', content: prompt }],
+        { vectorResults, webResults, maxTokens }
+      );
+
+      // Check if response needs to be summarized
+      const needsSummary = response.split(/\s+/).length > summarizeThreshold;
+      
+      let displayContent = response;
+      let fullContent = undefined;
+      
+      if (needsSummary) {
+        // Create a simple summary by taking the first part of the response
+        const words = response.split(/\s+/);
+        displayContent = words.slice(0, summarizeThreshold / 2).join(' ') + '...';
+        fullContent = response;
+      }
+
+      // Add AI response
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: summary,
-        fullContent: longResponse,
+        content: displayContent,
+        fullContent: fullContent,
         isUser: false,
         timestamp: new Date(),
-        needsSummary: true
+        needsSummary: needsSummary
       };
+      
       setMessages((prev) => [...prev, botMessage]);
-    }, 1000);
-
-    setPrompt("");
+    } catch (error) {
+      console.error("Error generating response:", error);
+      
+      // Add error message
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: "Sorry, I encountered an error while generating a response. Please check your API keys in the Data Management section.",
+        isUser: false,
+        timestamp: new Date(),
+      };
+      
+      setMessages((prev) => [...prev, errorMessage]);
+      toast.error("Failed to generate response. Please check your API keys.");
+    } finally {
+      setLoading(false);
+      setPrompt("");
+    }
   };
 
   return (
@@ -86,8 +152,6 @@ const Chat = () => {
         <div className="flex justify-center mb-8">
           <UserAvatar 
             size="xl"
-            // You can add the src prop when you have a user image
-            // src="/path-to-user-image.jpg" 
             fallback="U"
           />
         </div>
@@ -120,6 +184,18 @@ const Chat = () => {
               </div>
             </div>
           ))}
+          
+          {loading && (
+            <div className="flex justify-start">
+              <div className="bg-gray-100 text-gray-800 max-w-[80%] rounded-lg px-4 py-2">
+                <div className="flex space-x-2">
+                  <div className="w-2 h-2 rounded-full bg-gray-400 animate-pulse"></div>
+                  <div className="w-2 h-2 rounded-full bg-gray-400 animate-pulse delay-150"></div>
+                  <div className="w-2 h-2 rounded-full bg-gray-400 animate-pulse delay-300"></div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -131,8 +207,13 @@ const Chat = () => {
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Ask a question..."
             className="flex-1"
+            disabled={loading}
           />
-          <Button type="submit" className="flex items-center gap-1">
+          <Button 
+            type="submit" 
+            className="flex items-center gap-1" 
+            disabled={loading}
+          >
             <Send className="h-4 w-4" />
             <span>Send</span>
           </Button>

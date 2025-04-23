@@ -1,6 +1,7 @@
-import { useState } from "react";
+
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Upload, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,6 +10,8 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiKeySettings } from "@/components/ApiKeySettings";
+import { uploadDocumentToPinecone } from "@/services/pinecone";
+import { toast } from "sonner";
 
 const DataManagement = () => {
   const [vectorPercentage, setVectorPercentage] = useState(75);
@@ -16,6 +19,38 @@ const DataManagement = () => {
   const [resultLength, setResultLength] = useState(200);
   const [summarizeThreshold, setSummarizeThreshold] = useState(500);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [knowledgeSources, setKnowledgeSources] = useState<string[]>([]);
+
+  // Load settings from localStorage on component mount
+  useEffect(() => {
+    const storedVectorPercentage = localStorage.getItem("vectorPercentage");
+    const storedResultLength = localStorage.getItem("resultLength");
+    const storedSummarizeThreshold = localStorage.getItem("summarizeThreshold");
+    const storedKnowledgeSources = localStorage.getItem("knowledgeSources");
+    
+    if (storedVectorPercentage) {
+      const percentage = parseInt(storedVectorPercentage);
+      setVectorPercentage(percentage);
+      setWebPercentage(100 - percentage);
+    }
+    
+    if (storedResultLength) {
+      setResultLength(parseInt(storedResultLength));
+    }
+    
+    if (storedSummarizeThreshold) {
+      setSummarizeThreshold(parseInt(storedSummarizeThreshold));
+    }
+    
+    if (storedKnowledgeSources) {
+      try {
+        setKnowledgeSources(JSON.parse(storedKnowledgeSources));
+      } catch (e) {
+        console.error("Error parsing knowledge sources:", e);
+      }
+    }
+  }, []);
 
   const handleVectorPercentageChange = (value: number[]) => {
     const newValue = value[0];
@@ -29,14 +64,40 @@ const DataManagement = () => {
     }
   };
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     if (!selectedFile) return;
     
-    alert(`Ready to upload ${selectedFile.name} to Pinecone vector database`);
+    setUploading(true);
     
-    setSelectedFile(null);
-    const fileInput = document.getElementById("file-upload") as HTMLInputElement;
-    if (fileInput) fileInput.value = "";
+    try {
+      await uploadDocumentToPinecone(selectedFile);
+      
+      // Add to knowledge sources
+      const newSources = [...knowledgeSources, selectedFile.name];
+      setKnowledgeSources(newSources);
+      
+      // Save to localStorage
+      localStorage.setItem("knowledgeSources", JSON.stringify(newSources));
+      
+      toast.success(`Successfully uploaded ${selectedFile.name} to Pinecone vector database`);
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      toast.error("Failed to upload file. Please check your API keys and try again.");
+    } finally {
+      setUploading(false);
+      setSelectedFile(null);
+      const fileInput = document.getElementById("file-upload") as HTMLInputElement;
+      if (fileInput) fileInput.value = "";
+    }
+  };
+  
+  const handleSaveSettings = () => {
+    // Save settings to localStorage
+    localStorage.setItem("vectorPercentage", vectorPercentage.toString());
+    localStorage.setItem("resultLength", resultLength.toString());
+    localStorage.setItem("summarizeThreshold", summarizeThreshold.toString());
+    
+    toast.success("Settings saved successfully");
   };
 
   return (
@@ -75,6 +136,7 @@ const DataManagement = () => {
                     className="hidden"
                     onChange={handleFileChange}
                     accept=".pdf,.doc,.docx,.txt"
+                    disabled={uploading}
                   />
                   <label 
                     htmlFor="file-upload" 
@@ -82,9 +144,7 @@ const DataManagement = () => {
                   >
                     <div className="flex flex-col items-center gap-2">
                       <div className="p-3 rounded-full bg-primary/10 text-primary">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                        </svg>
+                        <Upload className="w-6 h-6" />
                       </div>
                       <span className="font-medium text-gray-700">Click to upload or drag and drop</span>
                       <span className="text-sm text-gray-500">PDF, DOC, DOCX, TXT (Max 10MB)</span>
@@ -100,10 +160,17 @@ const DataManagement = () => {
               <CardFooter>
                 <Button 
                   onClick={handleUpload} 
-                  disabled={!selectedFile}
+                  disabled={!selectedFile || uploading}
                   className="w-full"
                 >
-                  Upload to Vector Database
+                  {uploading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                      Uploading...
+                    </>
+                  ) : (
+                    <>Upload to Vector Database</>
+                  )}
                 </Button>
               </CardFooter>
             </Card>
@@ -116,10 +183,23 @@ const DataManagement = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-center p-6 border rounded-lg border-gray-200">
-                  <p className="text-gray-500">You don't have any knowledge sources yet.</p>
-                  <p className="text-sm text-gray-400 mt-1">Upload files to see them here.</p>
-                </div>
+                {knowledgeSources.length > 0 ? (
+                  <div className="space-y-3">
+                    {knowledgeSources.map((source, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                        <div className="flex items-center gap-2">
+                          <Database className="h-4 w-4 text-primary" />
+                          <span>{source}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center p-6 border rounded-lg border-gray-200">
+                    <p className="text-gray-500">You don't have any knowledge sources yet.</p>
+                    <p className="text-sm text-gray-400 mt-1">Upload files to see them here.</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -177,7 +257,7 @@ const DataManagement = () => {
                 </div>
               </CardContent>
               <CardFooter>
-                <Button className="w-full">Save Settings</Button>
+                <Button className="w-full" onClick={handleSaveSettings}>Save Settings</Button>
               </CardFooter>
             </Card>
           </TabsContent>
